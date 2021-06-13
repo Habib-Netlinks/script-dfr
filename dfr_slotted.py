@@ -152,6 +152,7 @@ class Solve_DFR_Service_History():
                 self.result.append({'apps_id': str(apps_id), 'emp_id': emp_id, 'msg': 'Employee has more than 1 approved dfr / بیش از یک ریکارد فعال یافت شد dfr'})
                 print('Employee has more than 1 approved dfr: '+str(apps_id))
                 continue
+            dfr_id = dfr_date[0].get('id')
             dfr_date = dfr_date[0].get('effective_date')
             try:
                 self.cursor.execute("BEGIN")
@@ -164,7 +165,7 @@ class Solve_DFR_Service_History():
                     self.db_connection.rollback()
                     continue
                 self.cursor.execute("""SELECT to_date, id FROM assignment_assignment WHERE hr_employee_id = %s
-                                    AND to_date IS NOT NULL AND active='t' AND from_date < %s ORDER BY from_date DESC LIMIT 1""", (emp_id,str(dfr_date)))
+                                    AND to_date IS NOT NULL AND active='t' AND state != 'cancelled' AND from_date < %s ORDER BY from_date DESC LIMIT 1""", (emp_id,str(dfr_date)))
                 last_assign_end_date = self.cursor.fetchone()
                 if not last_assign_end_date or not last_assign_end_date.get('id'):
                     self.result.append({'apps_id': str(apps_id), 'emp_id': emp_id, 'msg': 'There is no assignment before dfr effective date or assignment end date is empty / تاریخ ختم تعیین بست خالی است یا هیچ ریکاردی قبل از نیست قبل از dfr'})
@@ -178,6 +179,10 @@ class Solve_DFR_Service_History():
                     if assign_effective_date:
                         self.cursor.execute("""INSERT INTO employee_service_history (hr_employee_id, start_date, active, create_date)
                                         VALUES (%s, %s, 't', %s)""", (emp_id, str(assign_effective_date.get('from_date')), datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f') ))
+                        self.cursor.execute("""SELECT id FROM duty_status WHERE name = 'Present' AND active='t' LIMIT 1""")
+                        present_rec = self.cursor.fetchone()
+                        self.cursor.execute("""UPDATE personnel_time_attendance SET duty_status_id = %s, is_duty_status_readonly = 'f' 
+                                            WHERE date > %s AND hr_employee_id = %s""", (present_rec.get('id'), str(dfr_date), emp_id))
                         counter +=1
                         self.result.append({'apps_id': str(apps_id), 'emp_id': emp_id, 'msg': 'Issue Fixed / مشکل حل گردید'})
                     else:
@@ -186,8 +191,8 @@ class Solve_DFR_Service_History():
                         continue
                         
                 else:
-                    self.cursor.execute("""UPDATE employee_service_history SET end_date = %s WHERE id = %s""", 
-                                        (str(dfr_date), service_end_date.get('id')))
+                    self.cursor.execute("""UPDATE employee_service_history SET end_date = %s, dfr_date = %s, dfr_id = %s WHERE id = %s""", 
+                                        (str(dfr_date), str(dfr_date), dfr_id, service_end_date.get('id')))
                     self.cursor.execute("""UPDATE assignment_assignment SET to_date = %s WHERE id = %s""",
                                         (str(dfr_date), last_assign_end_date.get('id')))
                     self.cursor.execute("""SELECT from_date FROM assignment_assignment WHERE hr_employee_id = %s
@@ -197,6 +202,10 @@ class Solve_DFR_Service_History():
                     if assign_effective_date:
                         self.cursor.execute("""INSERT INTO employee_service_history (hr_employee_id, start_date, active, create_date)
                                         VALUES (%s, %s, 't', %s)""", (emp_id, str(assign_effective_date.get('from_date')), datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f') ))
+                        self.cursor.execute("""SELECT id FROM duty_status WHERE name = 'Present' AND active='t' LIMIT 1""")
+                        present_rec = self.cursor.fetchone()
+                        self.cursor.execute("""UPDATE personnel_time_attendance SET duty_status_id = %s, is_duty_status_readonly = 'f' 
+                                            WHERE date > %s AND hr_employee_id = %s""", (present_rec.get('id'), str(dfr_date), emp_id))
                         counter +=1
                         self.result.append({'apps_id': str(apps_id), 'emp_id': emp_id, 'msg': 'Issue Fixed / مشکل حل گردید'})
                     else:
@@ -267,7 +276,7 @@ class Solve_DFR_Service_History():
                     continue
                     # self.cursor.execute("""UPDATE employee_service_history SET end_date = %s WHERE id = %s""", (str(dfr_date), res.get('id')))
                 self.cursor.execute("""SELECT to_date, id FROM assignment_assignment WHERE hr_employee_id = %s
-                                    AND to_date IS NOT NULL AND from_date < %s AND active='t' 
+                                    AND to_date IS NOT NULL AND from_date < %s AND active='t' AND state != 'cancelled' 
                                     ORDER BY from_date DESC LIMIT 1""", (emp_id, str(dfr_date)))
                 last_assign_end_date = self.cursor.fetchone()
                 if not last_assign_end_date or not last_assign_end_date.get('to_date'):
